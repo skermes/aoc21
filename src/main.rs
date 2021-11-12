@@ -10,6 +10,7 @@ use std::fmt::Display;
 use std::time::{Instant, Duration};
 
 use reqwest;
+use chrono::prelude::{Utc, TimeZone};
 
 use crate::aoc_error::AocError;
 use crate::days::{get_day, Day};
@@ -49,18 +50,27 @@ fn get_input(day: &str) -> Result<String, AocError> {
     let path = std::path::Path::new(&fname);
 
     if !path.exists() {
+        let now = Utc::now();
+        // AoC is always run so that puzzles unlock at midnight EST, UTC-5.
+        // Therefore, if it's before 5 AM UTC on Dec N 2021, the puzzle is
+        // unavailable, and there's no point downloading it.
+        if now < Utc.ymd(2021, 12, day.parse()?).and_hms(5, 0, 0) {
+            return Err(AocError::TooEarly);
+        }
+
         let mut session_cookie = String::new();
         let mut cookie_file = std::fs::File::open(".advent-session-cookie")?;
         cookie_file.read_to_string(&mut session_cookie)?;
 
         let client = reqwest::blocking::Client::new();
         let res = client
-            .get(format!("https://adventofcode.com/2020/day/{}/input", day))
+            .get(format!("https://adventofcode.com/2021/day/{}/input", day))
             .header("Cookie", format!("session={}", session_cookie))
             .send()?;
 
         let input = res.text()?;
         if input.starts_with("Please don't repeatedly request this endpoint before it unlocks") {
+            // Whoops, my date math was wrong.
             return Err(AocError::TooEarly);
         }
 
