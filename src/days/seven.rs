@@ -54,12 +54,19 @@ pub fn part_two(input: &str) -> Result<String, AocError> {
         .map(|s| s.parse())
         .collect::<Result<Vec<usize>, ParseIntError>>()?;
 
-    let best_gather_spot = crab_mean(&positions);
+    let low_candidate = crab_mean(&positions);
+    let high_candidate = low_candidate + 1;
 
-    let total_fuel: usize = positions
+    let low_fuel: usize = positions
         .iter()
-        .map(|p| fuel_cost_p2(*p, best_gather_spot))
+        .map(|p| fuel_cost_p2(*p, low_candidate))
         .sum();
+    let high_fuel: usize = positions
+        .iter()
+        .map(|p| fuel_cost_p2(*p, high_candidate))
+        .sum();
+
+    let total_fuel = if low_fuel < high_fuel { low_fuel } else { high_fuel };
 
     Ok(total_fuel.to_string())
 }
