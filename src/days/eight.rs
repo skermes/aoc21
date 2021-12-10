@@ -1,29 +1,7 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::str::FromStr;
 use crate::aoc_error::AocError;
 
 pub const NAME: &str = "Seven Segment Search";
-
-#[derive(Debug)]
-struct Display {
-    digit_signals: Vec<HashSet<char>>,
-    outputs: Vec<HashSet<char>>
-}
-
-impl FromStr for Display {
-    type Err = AocError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (signals, outputs) = s.split_once(" | ")
-            .ok_or_else(|| AocError::Misc(format!("Invalid display string \"{}\"", s)))?;
-
-        Ok(Display {
-            digit_signals: signals.split(" ").map(|s| s.chars().collect()).collect(),
-            outputs: outputs.split(" ").map(|s| s.chars().collect()).collect()
-        })
-    }
-}
 
 const A: usize = 0b0000001;
 const B: usize = 0b0000010;
@@ -33,144 +11,164 @@ const E: usize = 0b0010000;
 const F: usize = 0b0100000;
 const G: usize = 0b1000000;
 
-impl Display {
-    fn wiring_pattern(&self) -> HashMap<char, usize> {
-        let mut all_signals = HashSet::from(['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct Segments(usize);
 
-        let mut f_and_c_set = self.digit_signals.iter()
-            .filter(|signal| signal.len() == 2)
-            .cloned()
-            .next()
-            .unwrap();
+impl FromStr for Segments {
+    type Err = AocError;
 
-        let a_and_c_and_f_set = self.digit_signals.iter()
-            .filter(|signal| signal.len() == 3)
-            .next()
-            .unwrap();
-
-        let mut b_and_d_set: HashSet<char> = self.digit_signals.iter()
-            .filter(|signal| signal.len() == 4)
-            .next()
-            .unwrap()
-            .difference(&f_and_c_set)
-            .map(|&c| c)
-            .collect();
-
-        let mut missing_from_sixes: HashSet<char> = self.digit_signals.iter()
-            .filter(|signal| signal.len() == 6)
-            .flat_map(|signal| all_signals.difference(signal))
-            .map(|&c| c)
-            .collect();
-
-        let signal_a = a_and_c_and_f_set.difference(&f_and_c_set).next().unwrap().clone();
-        let signal_d = missing_from_sixes.intersection(&b_and_d_set).next().unwrap().clone();
-        let signal_c = missing_from_sixes.intersection(&f_and_c_set).next().unwrap().clone();
-
-        missing_from_sixes.remove(&signal_d);
-        missing_from_sixes.remove(&signal_c);
-        let signal_e = missing_from_sixes.iter().next().unwrap();
-
-        f_and_c_set.remove(&signal_c);
-        let signal_f = f_and_c_set.iter().next().unwrap();
-
-        b_and_d_set.remove(&signal_d);
-        let signal_b = b_and_d_set.iter().next().unwrap();
-
-        all_signals.remove(&signal_a);
-        all_signals.remove(signal_b);
-        all_signals.remove(&signal_c);
-        all_signals.remove(&signal_d);
-        all_signals.remove(signal_e);
-        all_signals.remove(signal_f);
-        let signal_g = all_signals.iter().next().unwrap();
-
-        HashMap::from([
-            (signal_a,  A),
-            (*signal_b, B),
-            (signal_c,  C),
-            (signal_d,  D),
-            (*signal_e, E),
-            (*signal_f, F),
-            (*signal_g, G)
-        ])
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let value = s.chars()
+            .map(|c| match c {
+                'a' => Ok(A),
+                'b' => Ok(B),
+                'c' => Ok(C),
+                'd' => Ok(D),
+                'e' => Ok(E),
+                'f' => Ok(F),
+                'g' => Ok(G),
+                _ => Err(AocError::Misc(format!("Invalid segment \"{}\"", c)))
+            })
+            .fold(Ok(0), |acc, x| match (acc, x) {
+                (Ok(acc), Ok(x)) => Ok(acc | x),
+                (Err(e), _) => Err(e),
+                (_, Err(e)) => Err(e)
+            })?;
+        Ok(Segments(value))
     }
 }
 
-fn digit(wiring: &HashMap<char, usize>, wires: &HashSet<char>) -> usize {
-    let digits: HashMap<usize, usize> = HashMap::from([
-        (A + B + C + E + F + G,     0),
-        (C + F,                     1),
-        (A + C + D + E + G,         2),
-        (A + C + D + F + G,         3),
-        (B + C + D + F,             4),
-        (A + B + D + F + G,         5),
-        (A + B + D + E + F + G,     6),
-        (A + C + F,                 7),
-        (A + B + C + D + E + F + G, 8),
-        (A + B + C + D + F + G,     9)
-    ]);
+impl Segments {
+    fn len(&self) -> u32 {
+        self.0.count_ones()
+    }
 
-    *digits.get(&wires.iter().map(|w| wiring.get(w).unwrap()).sum()).unwrap()
+    fn intersection(&self, other: &Segments) -> Segments {
+        Segments(self.0 & other.0)
+    }
+
+    fn is_1_or_4_or_7_or_8(&self) -> bool {
+        self.len() == 2 || self.len() == 3 || self.len() == 4 || self.len() == 7
+    }
 }
 
-fn output_value(wiring: &HashMap<char, usize>, display: &Display) -> usize {
-    digit(wiring, &display.outputs[0]) * 1000 +
-    digit(wiring, &display.outputs[1]) * 100 +
-    digit(wiring, &display.outputs[2]) * 10 +
-    digit(wiring, &display.outputs[3])
+#[derive(Debug)]
+struct SegmentDictionary {
+    digits: Vec<Segments>
 }
 
-fn is_1_or_4_or_7_or_8(pattern: &HashSet<char>) -> bool {
-    pattern.len() == 2 || pattern.len() == 4 || pattern.len() == 3 || pattern.len() == 7
+impl FromStr for SegmentDictionary {
+    type Err = AocError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(SegmentDictionary {
+            digits: s.split(" ")
+                .map(|s| s.parse())
+                .collect::<Result<Vec<Segments>, AocError>>()?
+        })
+    }
+}
+
+impl SegmentDictionary {
+    // Unwraps in digit finders are safe as long as we assume the dictionary
+    // is well-formed - it has one of every digit.
+
+    fn one(&self) -> &Segments {
+        self.digits
+            .iter()
+            .filter(|s| s.len() == 2)
+            .next()
+            .unwrap()
+    }
+
+    fn four(&self) -> &Segments {
+        self.digits
+            .iter()
+            .filter(|s| s.len() == 4)
+            .next()
+            .unwrap()
+    }
+
+    fn digit(&self, segment: &Segments) -> Result<usize, AocError> {
+        match segment.len() {
+            2 => Ok(1),
+            3 => Ok(7),
+            4 => Ok(4),
+            7 => Ok(8),
+            5 => {
+                if self.four().intersection(segment).len() == 2 {
+                    Ok(2)
+                } else if self.one().intersection(segment).len() == 2{
+                    Ok(3)
+                } else {
+                    Ok(5)
+                }
+            },
+            6 => {
+                if self.four().intersection(segment).len() == 4 {
+                    Ok(9)
+                } else if self.one().intersection(segment).len() == 2 {
+                    Ok(0)
+                } else {
+                    Ok(6)
+                }
+            },
+            _ => Err(AocError::Misc("Bad digit".to_string()))
+        }
+    }
+}
+
+#[derive(Debug)]
+struct KrangledDisplay {
+    signals: SegmentDictionary,
+    outputs: Vec<Segments>
+}
+
+impl FromStr for KrangledDisplay {
+    type Err = AocError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (signals, outputs) = s.split_once(" | ")
+            .ok_or_else(|| AocError::Misc(format!("Invalid display string \"{}\"", s)))?;
+
+        Ok(KrangledDisplay {
+            signals: signals.parse()?,
+            outputs: outputs.split(" ")
+                .map(|s| s.parse())
+                .collect::<Result<Vec<Segments>, AocError>>()?
+        })
+    }
+}
+
+impl KrangledDisplay {
+    fn output(&self) -> Result<usize, AocError> {
+        Ok(self.signals.digit(&self.outputs[0])? * 1000 +
+           self.signals.digit(&self.outputs[1])? * 100 +
+           self.signals.digit(&self.outputs[2])? * 10 +
+           self.signals.digit(&self.outputs[3])?)
+    }
 }
 
 pub fn part_one(input: &str) -> Result<String, AocError> {
-//     let input = "be cfbegad cbdgef fgaecd cgeb fdcge agebfd fecdb fabcd edb | fdgacbe cefdb cefbgd gcbe
-// edbfga begcd cbg gc gcadebf fbgde acbgfd abcde gfcbed gfec | fcgedb cgb dgebacf gc
-// fgaebd cg bdaec gdafb agbcfd gdcbef bgcad gfac gcb cdgabef | cg cg fdcagb cbg
-// fbegcd cbd adcefb dageb afcb bc aefdc ecdab fgdeca fcdbega | efabcd cedba gadfec cb
-// aecbfdg fbg gf bafeg dbefa fcge gcbea fcaegb dgceab fcbdga | gecf egdcabf bgf bfgea
-// fgeab ca afcebg bdacfeg cfaedg gcfdb baec bfadeg bafgc acf | gebdcfa ecba ca fadegcb
-// dbcfg fgd bdegcaf fgec aegbdf ecdfab fbedc dacgb gdcebf gf | cefg dcbef fcge gbcadfe
-// bdfegc cbegaf gecbf dfcage bdacg ed bedf ced adcbefg gebcd | ed bcgafe cdgba cbgef
-// egadfb cdbfeg cegd fecab cgb gbdefca cg fgcdab egfdb bfceg | gbdfcae bgc cg cgb
-// gcafb gcf dcaebfg ecagb gf abcdeg gaef cafbge fdbac fegbdc | fgae cfgab fg bagce";
-
-    let displays = input.lines()
-        .map(|l| l.parse())
-        .collect::<Result<Vec<Display>, AocError>>()?;
-
-    let count = displays
-        .iter()
-        .flat_map(|d| {
-            d.outputs.iter()
-                .map(|o| is_1_or_4_or_7_or_8(o))
-        })
-        .filter(|b| *b)
-        .count();
+    let count = input.lines()
+        .map(|l| l.parse::<KrangledDisplay>())
+        .fold(Ok(0), |sum: Result<usize, AocError>, display| {
+            let specials = display?.outputs
+                .iter()
+                .filter(|s| s.is_1_or_4_or_7_or_8())
+                .count();
+            Ok(sum? + specials)
+        })?;
 
     Ok(count.to_string())
 }
 
 pub fn part_two(input: &str) -> Result<String, AocError> {
-//         let input = "be cfbegad cbdgef fgaecd cgeb fdcge agebfd fecdb fabcd edb | fdgacbe cefdb cefbgd gcbe
-// edbfga begcd cbg gc gcadebf fbgde acbgfd abcde gfcbed gfec | fcgedb cgb dgebacf gc
-// fgaebd cg bdaec gdafb agbcfd gdcbef bgcad gfac gcb cdgabef | cg cg fdcagb cbg
-// fbegcd cbd adcefb dageb afcb bc aefdc ecdab fgdeca fcdbega | efabcd cedba gadfec cb
-// aecbfdg fbg gf bafeg dbefa fcge gcbea fcaegb dgceab fcbdga | gecf egdcabf bgf bfgea
-// fgeab ca afcebg bdacfeg cfaedg gcfdb baec bfadeg bafgc acf | gebdcfa ecba ca fadegcb
-// dbcfg fgd bdegcaf fgec aegbdf ecdfab fbedc dacgb gdcebf gf | cefg dcbef fcge gbcadfe
-// bdfegc cbegaf gecbf dfcage bdacg ed bedf ced adcbefg gebcd | ed bcgafe cdgba cbgef
-// egadfb cdbfeg cegd fecab cgb gbdefca cg fgcdab egfdb bfceg | gbdfcae bgc cg cgb
-// gcafb gcf dcaebfg ecagb gf abcdeg gaef cafbge fdbac fegbdc | fgae cfgab fg bagce";
-
-    let displays = input.lines()
-        .map(|l| l.parse())
-        .collect::<Result<Vec<Display>, AocError>>()?;
-
-    let sum: usize = displays.iter()
-        .map(|d| output_value(&d.wiring_pattern(), &d))
-        .sum();
+    let sum = input.lines()
+        .map(|l| l.parse::<KrangledDisplay>())
+        .fold(Ok(0), |sum: Result<usize, AocError>, display| {
+            Ok(sum? + display?.output()?)
+        })?;
 
     Ok(sum.to_string())
 }
