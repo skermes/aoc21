@@ -5,33 +5,169 @@ use crate::aoc_error::AocError;
 
 pub const NAME: &str = "Passage Pathing";
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 enum Room {
     Start,
     End,
-    Big(String),
-    Small(String)
+    Big(usize),
+    Small(usize)
 }
 
-impl FromStr for Room {
-    type Err = AocError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+impl<'a> Room {
+    fn parse(s: &'a str, names: &mut HashMap<&'a str, usize>) -> Room {
         lazy_static::lazy_static! {
             static ref UPPERCASE: Regex = Regex::new("[A-Z]+").unwrap();
         }
 
-        let s = s.trim();
-
         if s == "start" {
-            Ok(Room::Start)
+            Room::Start
         } else if s == "end" {
-            Ok(Room::End)
+            Room::End
         } else if UPPERCASE.is_match(s) {
-            Ok(Room::Big(s.to_string()))
+            if let Some(n) = names.get(s) {
+                Room::Big(*n)
+            } else {
+                let n = 1 << names.len();
+                names.insert(s, n);
+                Room::Big(n)
+            }
         } else {
-            Ok(Room::Small(s.to_string()))
+            if let Some(n) = names.get(s) {
+                Room::Small(*n)
+            } else {
+                let n = 1 << names.len();
+                names.insert(s, n);
+                Room::Small(n)
+            }
         }
+    }
+}
+
+trait RoomPath: std::fmt::Debug {
+    fn peek(&self) -> &Room;
+    fn try_visit(&mut self, room: &Room) -> bool;
+    fn unvisit(&mut self);
+}
+
+#[derive(Debug)]
+struct RoomPathP1 {
+    path: Vec<Room>,
+    contains: usize
+}
+
+impl RoomPathP1 {
+    fn new() -> Self {
+        RoomPathP1 {
+            path: vec![ Room::Start ],
+            contains: 0
+        }
+    }
+}
+
+impl RoomPath for RoomPathP1 {
+    fn peek(&self) -> &Room { &self.path[self.path.len() - 1] }
+
+    fn try_visit(&mut self, room: &Room) -> bool {
+        match room {
+            Room::Start => false,
+            Room::End => {
+                self.path.push(room.clone());
+                true
+            },
+            Room::Big(n) => {
+                self.path.push(room.clone());
+                self.contains |= n;
+                true
+            },
+            Room::Small(n) => {
+                if self.contains & n > 0 {
+                    false
+                } else {
+                    self.path.push(room.clone());
+                    self.contains |= n;
+                    true
+                }
+            }
+        }
+    }
+
+    fn unvisit(&mut self) {
+        let last = self.path[self.path.len() - 1];
+        match last {
+            Room::Big(n) => { self.contains &= !n; },
+            Room::Small(n) => { self.contains &= !n; },
+            _ => {}
+        };
+
+        self.path.pop();
+    }
+}
+
+#[derive(Debug)]
+struct RoomPathP2 {
+    path: Vec<Room>,
+    contains: usize,
+    doubled: usize
+}
+
+impl RoomPathP2 {
+    fn new() -> Self {
+        RoomPathP2 {
+            path: vec![ Room::Start ],
+            contains: 0,
+            doubled: 0
+        }
+    }
+}
+
+impl RoomPath for RoomPathP2 {
+    fn peek(&self) -> &Room { &self.path[self.path.len() - 1] }
+
+    fn try_visit(&mut self, room: &Room) -> bool {
+        match room {
+            Room::Start => false,
+            Room::End => {
+                self.path.push(room.clone());
+                true
+            }
+            Room::Big(n) => {
+                self.path.push(room.clone());
+                self.contains |= n;
+                true
+            }
+            Room::Small(n) => {
+                if self.contains & n > 0 {
+                    if self.doubled == 0 {
+                        self.path.push(room.clone());
+                        self.doubled = *n;
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    self.path.push(room.clone());
+                    self.contains |= n;
+                    true
+                }
+            }
+        }
+    }
+
+    fn unvisit(&mut self) {
+        let last = self.path[self.path.len() - 1];
+        match last {
+            Room::Big(n) => { self.contains &= !n; },
+            Room::Small(n) => {
+                if self.doubled == n {
+                    self.doubled = 0;
+                } else {
+                    self.contains &= !n;
+                }
+            },
+            _ => {}
+        }
+
+        self.path.pop();
     }
 }
 
@@ -45,12 +181,13 @@ impl FromStr for RoomGraph {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut graph = RoomGraph { edges: HashMap::new() };
+        let mut names = HashMap::new();
 
         for line in s.lines() {
             let (left, right) = line.split_once("-")
                 .ok_or_else(|| AocError::Misc("Bad line".to_string()))?;
-            let left: Room = left.parse()?;
-            let right: Room = right.parse()?;
+            let left = Room::parse(left, &mut names);
+            let right = Room::parse(right, &mut names);
 
             graph.add_edge(left.clone(), right.clone());
             graph.add_edge(right, left);
@@ -69,7 +206,7 @@ impl RoomGraph {
         }
     }
 
-    fn count_paths_to_end<P: RoomPath>(&self, path: P) -> Result<usize, AocError> {
+    fn count_paths_to_end<P: RoomPath>(&self, path: &mut P) -> Result<usize, AocError> {
         let end = path.peek();
 
         if end == &Room::End {
@@ -79,8 +216,10 @@ impl RoomGraph {
                 .ok_or_else(|| AocError::Misc("Missing room".to_string()))?
                 .iter()
                 .map(|neighbor| {
-                    if let Some(new_path) = path.try_visit(neighbor) {
-                        self.count_paths_to_end(new_path)
+                    if path.try_visit(neighbor) {
+                        let count = self.count_paths_to_end(path);
+                        path.unvisit();
+                        count
                     } else {
                         Ok(0)
                     }
@@ -94,101 +233,11 @@ impl RoomGraph {
     }
 
     fn count_paths_p1(&self) -> Result<usize, AocError> {
-        self.count_paths_to_end(RoomPathP1::new())
+        self.count_paths_to_end(&mut RoomPathP1::new())
     }
 
     fn count_paths_p2(&self) -> Result<usize, AocError> {
-        self.count_paths_to_end(RoomPathP2::new())
-    }
-}
-
-trait RoomPath {
-    fn peek(&self) -> &Room;
-    fn try_visit(&self, room: &Room) -> Option<Self> where Self: Sized;
-}
-
-#[derive(Debug)]
-struct RoomPathP1 {
-    path: Vec<Room>
-}
-
-impl RoomPathP1 {
-    fn new() -> Self { RoomPathP1 { path: vec![ Room::Start ] } }
-
-    fn visit(&self, room: &Room) -> Self {
-        let mut new_path = self.path.clone();
-        new_path.push(room.clone());
-        RoomPathP1 { path: new_path }
-    }
-}
-
-impl RoomPath for RoomPathP1 {
-    fn peek(&self) -> &Room { &self.path[self.path.len() - 1] }
-
-    fn try_visit(&self, room: &Room) -> Option<Self> {
-        match room {
-            Room::Start => None,
-            Room::End => Some(self.visit(room)),
-            Room::Big(_) => Some(self.visit(room)),
-            Room::Small(_) => {
-                if self.path.contains(&room) {
-                    None
-                } else {
-                    Some(self.visit(room))
-                }
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-struct RoomPathP2 {
-    path: Vec<Room>,
-    doubled: bool
-}
-
-impl RoomPathP2 {
-    fn new() -> Self {
-        RoomPathP2 {
-            path: vec![ Room::Start ],
-            doubled: false
-        }
-    }
-
-    fn visit(&self, room: &Room, is_double: bool) -> Self {
-        let mut new_path = self.path.clone();
-        new_path.push(room.clone());
-
-        if is_double {
-            RoomPathP2 {
-                path: new_path,
-                doubled: true
-            }
-        } else {
-            RoomPathP2 {
-                path: new_path,
-                doubled: self.doubled
-            }
-        }
-    }
-}
-
-impl RoomPath for RoomPathP2 {
-    fn peek(&self) -> &Room { &self.path[self.path.len() - 1] }
-
-    fn try_visit(&self, room: &Room) -> Option<Self> {
-        match room {
-            Room::Start => None,
-            Room::End => Some(self.visit(room, false)),
-            Room::Big(_) => Some(self.visit(room, false)),
-            Room::Small(_) => {
-                match (self.path.contains(&room), self.doubled) {
-                    (false, _) => Some(self.visit(room, false)),
-                    (true, false) => Some(self.visit(room, true)),
-                    (true, true) => None
-                }
-            }
-        }
+        self.count_paths_to_end(&mut RoomPathP2::new())
     }
 }
 
@@ -197,6 +246,7 @@ pub fn part_one(input: &str) -> Result<String, AocError> {
     let count = graph.count_paths_p1()?;
 
     Ok(count.to_string())
+    // Ok("Testing".to_string())
 }
 
 pub fn part_two(input: &str) -> Result<String, AocError> {
@@ -204,4 +254,5 @@ pub fn part_two(input: &str) -> Result<String, AocError> {
     let count = graph.count_paths_p2()?;
 
     Ok(count.to_string())
+    // Ok("Commented out".to_string())
 }
