@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::str::FromStr;
 use crate::aoc_error::AocError;
 
@@ -63,35 +63,41 @@ impl LavaTubeArea {
             .sum()
     }
 
-    fn flood_fill_basin(&self, low_point: usize) -> usize {
-        let mut visited = HashSet::new();
+    // Destructively count the locations in a basin by interatively setting each
+    // location to 9 so that we know not to count it again.
+    fn flood_fill_basin(&mut self, low_point: usize) -> usize {
         let mut to_visit = VecDeque::from([ low_point ]);
+        let mut size = 0;
 
-        loop {
-            if to_visit.is_empty() {
-                break;
-            }
-
+        while !to_visit.is_empty() {
             // Safe unwrap b/c of len check above.
             let next = to_visit.pop_front().unwrap();
+            if self.locations[next] == 9 { continue; }
+
             let neighbors = self.neighbors(next);
             for neighbor in neighbors {
-                if self.locations[neighbor] != 9 && !visited.contains(&neighbor) {
+                if self.locations[neighbor] != 9 {
                     to_visit.push_back(neighbor);
                 }
             }
 
-            visited.insert(next);
+            self.locations[next] = 9;
+            size += 1;
         }
 
-        visited.len()
+        size
     }
 
-    fn basins(&self) -> Vec<usize> {
-        (0..self.locations.len())
-            .filter(|p| self.is_low_point(*p))
-            .map(|p| self.flood_fill_basin(p))
-            .collect()
+    fn basins(&mut self) -> Vec<usize> {
+        let mut sizes = Vec::new();
+
+        for loc in 0..self.locations.len() {
+            if self.is_low_point(loc) {
+                sizes.push(self.flood_fill_basin(loc));
+            }
+        }
+
+        sizes
     }
 }
 
@@ -102,7 +108,7 @@ pub fn part_one(input: &str) -> Result<String, AocError> {
 }
 
 pub fn part_two(input: &str) -> Result<String, AocError> {
-    let area: LavaTubeArea = input.parse()?;
+    let mut area: LavaTubeArea = input.parse()?;
     let mut basins = area.basins();
 
     if basins.len() < 3 {
