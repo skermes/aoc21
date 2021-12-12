@@ -62,7 +62,7 @@ fn get_input(day: &str) -> Result<String, AocError> {
         let client = reqwest::blocking::Client::new();
         let res = client
             .get(format!("https://adventofcode.com/2021/day/{}/input", day))
-            .header("Cookie", format!("session={}", session_cookie))
+            .header("Cookie", format!("session={}", session_cookie.trim()))
             .send()?;
 
         let input = res.text()?;
