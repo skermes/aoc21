@@ -41,6 +41,17 @@ impl<'a> Room {
             }
         }
     }
+
+    fn index(&self) -> usize {
+        match self {
+            Room::Start => 0,
+            // We don't ever try to check end's neighbors, so this is just a
+            // number larger than the number of bits in usize
+            Room::End => 200,
+            Room::Big(n) => n.trailing_zeros() as usize + 1,
+            Room::Small(n) => n.trailing_zeros() as usize + 1
+        }
+    }
 }
 
 trait RoomPath: std::fmt::Debug {
@@ -94,6 +105,9 @@ impl RoomPath for RoomPathP1 {
     fn unvisit(&mut self) {
         let last = self.path[self.path.len() - 1];
         match last {
+            // This actually misrepresents whether we have Big rooms, since
+            // it'll remove them from contains even if we've visited them more
+            // than once previously. We don't really care about that though.
             Room::Big(n) => { self.contains &= !n; },
             Room::Small(n) => { self.contains &= !n; },
             _ => {}
@@ -156,6 +170,9 @@ impl RoomPath for RoomPathP2 {
     fn unvisit(&mut self) {
         let last = self.path[self.path.len() - 1];
         match last {
+            // This actually misrepresents whether we have Big rooms, since
+            // it'll remove them from contains even if we've visited them more
+            // than once previously. We don't really care about that though.
             Room::Big(n) => { self.contains &= !n; },
             Room::Small(n) => {
                 if self.doubled == n {
@@ -173,14 +190,14 @@ impl RoomPath for RoomPathP2 {
 
 #[derive(Debug)]
 struct RoomGraph {
-    edges: HashMap<Room, Vec<Room>>
+    edges: Vec<Vec<Room>>
 }
 
 impl FromStr for RoomGraph {
     type Err = AocError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut graph = RoomGraph { edges: HashMap::new() };
+        let mut graph = RoomGraph { edges: Vec::new() };
         let mut names = HashMap::new();
 
         for line in s.lines() {
@@ -199,21 +216,22 @@ impl FromStr for RoomGraph {
 
 impl RoomGraph {
     fn add_edge(&mut self, from: Room, to: Room) {
-        if let Some(rooms) = self.edges.get_mut(&from) {
-            rooms.push(to);
-        } else {
-            self.edges.insert(from, vec![to]);
+        let index = from.index();
+
+        while index >= self.edges.len() {
+            self.edges.push(Vec::new());
         }
+
+        self.edges[index].push(to);
     }
 
-    fn count_paths_to_end<P: RoomPath>(&self, path: &mut P) -> Result<usize, AocError> {
+    fn count_paths_to_end<P: RoomPath>(&self, path: &mut P) -> usize {
         let end = path.peek();
 
         if end == &Room::End {
-            Ok(1)
+            1
         } else {
-            self.edges.get(end)
-                .ok_or_else(|| AocError::Misc("Missing room".to_string()))?
+            self.edges[end.index()]
                 .iter()
                 .map(|neighbor| {
                     if path.try_visit(neighbor) {
@@ -221,38 +239,32 @@ impl RoomGraph {
                         path.unvisit();
                         count
                     } else {
-                        Ok(0)
+                        0
                     }
                 })
-                .fold(Ok(0), |acc, x| match (acc, x) {
-                    (Ok(acc), Ok(x)) => Ok(acc + x),
-                    (Err(e), _) => Err(e),
-                    (_, Err(e)) => Err(e)
-                })
+                .sum()
         }
     }
 
-    fn count_paths_p1(&self) -> Result<usize, AocError> {
+    fn count_paths_p1(&self) -> usize {
         self.count_paths_to_end(&mut RoomPathP1::new())
     }
 
-    fn count_paths_p2(&self) -> Result<usize, AocError> {
+    fn count_paths_p2(&self) -> usize {
         self.count_paths_to_end(&mut RoomPathP2::new())
     }
 }
 
 pub fn part_one(input: &str) -> Result<String, AocError> {
     let graph: RoomGraph = input.parse()?;
-    let count = graph.count_paths_p1()?;
+    let count = graph.count_paths_p1();
 
     Ok(count.to_string())
-    // Ok("Testing".to_string())
 }
 
 pub fn part_two(input: &str) -> Result<String, AocError> {
     let graph: RoomGraph = input.parse()?;
-    let count = graph.count_paths_p2()?;
+    let count = graph.count_paths_p2();
 
     Ok(count.to_string())
-    // Ok("Commented out".to_string())
 }
