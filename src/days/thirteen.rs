@@ -121,7 +121,7 @@ impl Paper {
         for y in 0..self.height {
             for x in 0..self.width {
                 if uniq.contains(&Point { x, y }) {
-                    drawing.push('#');
+                    drawing.push('█');
                 } else {
                     drawing.push(' ');
                 }
