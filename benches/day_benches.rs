@@ -13,6 +13,7 @@ use aoc21::days::ten;
 use aoc21::days::eleven;
 use aoc21::days::twelve;
 use aoc21::days::thirteen;
+use aoc21::days::fourteen;
 
 fn get_input(day: u8) -> String {
   let mut input_file = std::fs::File::open(format!("inputs/{}.txt", day)).unwrap();
@@ -99,7 +100,14 @@ pub fn day_thirteen(c: &mut Criterion) {
   c.bench_function("Day Thirteen Part Two", |b| b.iter(|| thirteen::part_two(black_box(&input))));
 }
 
+pub fn day_fourteen(c: &mut Criterion) {
+  let input = get_input(14);
+  c.bench_function("Day Fourteen Part One", |b| b.iter(|| fourteen::part_one(black_box(&input))));
+  c.bench_function("Day Fourteen Part Two", |b| b.iter(|| fourteen::part_two(black_box(&input))));
+}
+
 criterion_group!(benches,
   day_one, day_two, day_three, day_four, day_five, day_six, day_seven,
-  day_eight, day_nine, day_ten, day_eleven, day_twelve, day_thirteen);
+  day_eight, day_nine, day_ten, day_eleven, day_twelve, day_thirteen,
+  day_fourteen);
 criterion_main!(benches);
