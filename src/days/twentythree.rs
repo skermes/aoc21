@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::aoc_error::AocError;
 use lazy_static::lazy_static;
 
